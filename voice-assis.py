@@ -5,8 +5,6 @@ import os
 import imaplib
 import email
 import json
-from email.message import EmailMessage
-import datetime
 
 # Initialize voice engine and listener
 listener = sr.Recognizer()
@@ -14,9 +12,9 @@ engine = pyttsx3.init()
 
 # User credentials (consider using environment variables)
 your_password = os.getenv("YOUR_PASSWORD", "water is blue")
-your_name = "Anivesh"
-sender_email = os.getenv("SENDER_EMAIL", "********************@gmail.com") 
-sender_email_pass = os.getenv("SENDER_EMAIL_PASS", "***********************") 
+your_name = "Priyank"
+sender_email = os.getenv("SENDER_EMAIL", "singh.priyank.13112003@gmail.com") 
+sender_email_pass = os.getenv("SENDER_EMAIL_PASS", "eplw rffl lqvx ocjq") 
 
 # File to store the email directory
 email_directory_file = "mail_directory.json"
@@ -77,12 +75,11 @@ def send_email(receiver, subject, message):
         with smtplib.SMTP('smtp.gmail.com', 587) as server:
             server.starttls()
             server.login(sender_email, sender_email_pass)
-            email_msg = EmailMessage()
-            email_msg['From'] = sender_email
-            email_msg['To'] = receiver
-            email_msg['Subject'] = subject
-            email_msg.set_content(message)
-            server.send_message(email_msg)
+            message = f"""\
+            Subject: {subject}
+
+            {message}"""
+            server.sendmail(sender_email, receiver, message)
         print("Email sent successfully.")
         talk("Your email has been sent.")
     except smtplib.SMTPAuthenticationError:
