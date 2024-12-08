@@ -1,0 +1,14 @@
+{
+    "default": {
+        "email": "singh.priyank.13112003@gmail.com",
+        "password": "eplw rffl lqvx ocjq"
+    },
+    "rahul": {
+        "email": "work_email@gmail.com",
+        "password": "work_password"
+    },
+    "personal": {
+        "email": "personal_email@gmail.com",
+        "password": "personal_password"
+    }
+}

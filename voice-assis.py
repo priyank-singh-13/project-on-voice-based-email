@@ -5,6 +5,9 @@ import os
 import imaplib
 import email
 import json
+from elevenlabs import ElevenLabs, VoiceSettings
+
+
 
 # Initialize voice engine and listener
 listener = sr.Recognizer()
@@ -13,16 +16,58 @@ engine = pyttsx3.init()
 # User credentials (consider using environment variables)
 your_password = os.getenv("YOUR_PASSWORD", "water is blue")
 your_name = "Priyank"
-sender_email = os.getenv("SENDER_EMAIL", "singh.priyank.13112003@gmail.com") 
-sender_email_pass = os.getenv("SENDER_EMAIL_PASS", "eplw rffl lqvx ocjq") 
+current_sender_email = None
+current_sender_email_pass = None
 
 # File to store the email directory
 email_directory_file = "mail_directory.json"
+sender_email_list_file = "sender_email_list.json"
+sender_list = {}
 
 def talk(text):
     """Convert text to speech."""
     engine.say(text)
     engine.runAndWait()
+
+
+# def talk(text: str):
+#     """Convert text to speech using Eleven Labs and play the audio using pydub."""
+#     try:
+#         response = client.text_to_speech.convert(
+#             voice_id="pNInz6obpgDQGcFmaJgB",  # Adam pre-made voice
+#             output_format="mp3_22050_32",
+#             text=text,
+#             model_id="eleven_turbo_v2_5",  # Turbo model for low latency
+#             voice_settings=VoiceSettings(
+#                 stability=0.0,
+#                 similarity_boost=1.0,
+#                 style=0.0,
+#                 use_speaker_boost=True,
+#             ),
+#         )
+
+#         # Generate a unique file name for the output MP3 file
+#         save_directory = "audio_files"
+#         os.makedirs(save_directory, exist_ok=True)
+#         save_file_path = os.path.join(save_directory, f"{uuid.uuid4()}.mp3")
+
+#         # Save the audio to the file
+#         with open(save_file_path, "wb") as f:
+#             for chunk in response:
+#                 if chunk:
+#                     f.write(chunk)
+
+#         # Load the audio file with pydub and play it
+#         audio = AudioSegment.from_file(save_file_path, format="mp3")
+#         play(audio)
+
+#         # Clean up the audio file after playing
+#         os.remove(save_file_path)
+#         print("Text-to-speech audio played successfully!")
+
+#     except Exception as e:
+#         print(f"Error in text-to-speech: {e}")
+
 
 def get_info():
     """Capture voice input and convert it to text."""
@@ -31,7 +76,6 @@ def get_info():
             print('Listening...')
             listener.adjust_for_ambient_noise(source)
             voice = listener.listen(source, phrase_time_limit=7, timeout=8)
-            print("Processing...")
             info = listener.recognize_google(voice)
             print(f"User said: {info}")
             return info.lower()
@@ -71,15 +115,22 @@ def exit_program():
 
 def send_email(receiver, subject, message):
     """Send an email using SMTP."""
+    global current_sender_email, current_sender_email_pass
+
+    if not current_sender_email or not current_sender_email_pass:
+        talk("No sender email selected. Please select a sender email first.")
+        print("No sender email selected.")
+        return
+
     try:
         with smtplib.SMTP('smtp.gmail.com', 587) as server:
             server.starttls()
-            server.login(sender_email, sender_email_pass)
+            server.login(current_sender_email, current_sender_email_pass)
             message = f"""\
             Subject: {subject}
 
             {message}"""
-            server.sendmail(sender_email, receiver, message)
+            server.sendmail(current_sender_email, receiver, message)
         print("Email sent successfully.")
         talk("Your email has been sent.")
     except smtplib.SMTPAuthenticationError:
@@ -106,14 +157,24 @@ def get_email_info(email_list):
     talk('Tell me the text in your email.')
     message = get_info()
     send_email(receiver, subject, message)
-
+    
 def get_inbox():
     """Read unread emails one by one, asking the user whether to continue after each."""
+
+    global current_sender_email, current_sender_email_pass
+
+    if not current_sender_email or not current_sender_email_pass:
+        talk("No sender email selected. Please select a sender email first.")
+        print("No sender email selected.")
+        return
+    
     try:
         mail = imaplib.IMAP4_SSL('imap.gmail.com')
-        mail.login(sender_email, sender_email_pass)
+        mail.login(current_sender_email, current_sender_email_pass)
         mail.select('inbox')
-        result, data = mail.search(None, 'UNSEEN')  # Only fetch unread (UNSEEN) emails
+        
+        # Search for unread (UNSEEN) emails
+        result, data = mail.search(None, 'UNSEEN')  
 
         if result != 'OK':
             print("No new emails found.")
@@ -125,8 +186,46 @@ def get_inbox():
             print("No unread emails.")
             talk("You have no unread emails.")
             return
+        
+        # Read the latest email first (the last email UID in the list)
+        latest_uid = email_uids[-1]
 
-        for uid in email_uids:
+        # Fetch the email
+        result, email_data = mail.fetch(latest_uid, '(RFC822)')
+        if result != 'OK':
+            print(f"Failed to fetch email UID {latest_uid}.")
+            return
+
+        raw_email = email_data[0][1].decode('utf-8')
+        email_message = email.message_from_string(raw_email)
+        email_from = email.utils.parseaddr(email_message['From'])[1]
+        subject = email_message['Subject']
+        date = email_message['Date']
+        print(f"From: {email_from}\nSubject: {subject}\nDate: {date}\n")
+
+        # Displaying body if necessary
+        body = ""
+        for part in email_message.walk():
+            if part.get_content_type() == "text/plain":
+                body = part.get_payload(decode=True).decode('utf-8')
+                break
+        if body:
+            print(f"Body:\n{body}\n")
+            talk(f"You have an email from {email_from} with the subject {subject[:100]}. The message is: {body[:200]}")
+        else:
+            talk(f"You have an email from {email_from} with the subject {subject[:100]}, but it has no text content.")
+
+        # Wait for the user's response
+        talk("Do you want to read the next email? Say 'continue' to continue or 'stop' to stop.")
+        response = get_info()
+
+        if response and ('stop' in response or 'no' in response):
+            print("Stopped reading emails.")
+            talk("Stopped reading emails.")
+            return
+
+        # If 'continue' is said, read the next email
+        for uid in email_uids[-2::-1]:  # Read the rest of the unread emails (in reverse order)
             result, email_data = mail.fetch(uid, '(RFC822)')
             if result != 'OK':
                 print(f"Failed to fetch email UID {uid}.")
@@ -151,17 +250,15 @@ def get_inbox():
             else:
                 talk(f"You have an email from {email_from} with the subject {subject}, but it has no text content.")
 
-            # Ask the user if they want to continue to the next unread email
-            talk("Do you want to read the next email? Say yes to continue or no to stop.")
+            # Ask the user if they want to continue reading
+            talk("Do you want to read the next email? Say 'continue' to continue or 'stop' to stop.")
             response = get_info()
-            if response and 'no' in response:
+            if response and ('stop' in response or 'no' in response):
                 print("Stopped reading emails.")
                 talk("Stopped reading emails.")
                 break
 
-        # Optionally, mark all fetched emails as seen (optional as IMAP fetch typically marks as seen)
-        # mail.close()
-        # mail.logout()
+        mail.logout()
 
     except imaplib.IMAP4.error as e:
         print(f"IMAP error: {e}")
@@ -303,6 +400,50 @@ def modify_email_directory(email_list):
         else:
             talk("I did not understand that command. Please try again.")
 
+def load_sender_email_list():
+    """Load sender email list from the JSON file."""
+    if not os.path.exists(sender_email_list_file):
+        # Create an empty sender email list
+        with open(sender_email_list_file, 'w') as file:
+            json.dump({}, file, indent=4)
+        print(f"{sender_email_list_file} created as it did not exist.")
+        talk("Sender email list file created.")
+        return {}
+    else:
+        try:
+            with open(sender_email_list_file, 'r') as file:
+                sender_list = json.load(file)
+                print(f"Loaded sender email list from {sender_email_list_file}.")
+                return sender_list
+        except json.JSONDecodeError:
+            print(f"Error decoding {sender_email_list_file}. Starting with an empty list.")
+            talk("There was an error with the sender email list file. Starting with an empty list.")
+            return {}
+        except Exception as e:
+            print(f"Error loading sender email list: {e}")
+            talk("There was an error loading your sender email list.")
+            return {}
+        
+def select_sender_email(sender_list):
+    """Prompt the user to select a sender email."""
+    global current_sender_email, current_sender_email_pass
+
+    talk("Please select a sender email profile. Here are the available options.")
+    print("Available sender profiles:", ", ".join(sender_list.keys()))
+    talk(", ".join(sender_list.keys()))
+
+    while True:
+        sender_choice = get_info()
+        if sender_choice in sender_list:
+            current_sender_email = sender_list[sender_choice]['email']
+            current_sender_email_pass = sender_list[sender_choice]['password']
+            talk(f"You have selected the sender profile: {sender_choice}")
+            print(f"Selected sender email: {current_sender_email}")
+            break
+        else:
+            talk("Invalid choice. Please try again.")
+
+
 def main():
     """Main function to run the personal assistant."""
     os.system("cls" if os.name == "nt" else "clear")
@@ -314,6 +455,9 @@ def main():
     if authenticate():
         talk("Welcome!")
         email_list = load_email_directory()
+        sender_list = load_sender_email_list()
+
+        select_sender_email(sender_list)
 
         while True:
             talk("What can I do for you?")
